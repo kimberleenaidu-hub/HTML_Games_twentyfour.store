@@ -1,0 +1,147 @@
+<!-- TwentyFour "Cap Catch" game. Paste into a WordPress/Avada Code Block or an HTML page.
+     Brand colours and font are CSS variables below - change them in one place. -->
+<div id="tf-game">
+<style>
+#tf-game{
+  --tf-yellow:#FFED00; /* 100% CMYK yellow (C0 M0 Y100 K0) */ --tf-dark:#1A1A1A; --tf-cream:#FFF9DB; --tf-white:#fff;
+  font-family:'Modelica','Modelica Regular',Helvetica,Arial,sans-serif;
+  max-width:420px;margin:0 auto;position:relative;color:var(--tf-dark);user-select:none;-webkit-user-select:none;
+}
+#tf-game *{box-sizing:border-box;font-family:inherit}
+#tf-game canvas{width:100%;display:block;border-radius:18px;border:4px solid var(--tf-dark);background:var(--tf-cream);touch-action:none;cursor:none}
+#tf-game .tf-ov{position:absolute;inset:4px;border-radius:14px;background:rgba(26,26,26,.88);color:var(--tf-white);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:18px;gap:10px}
+#tf-game .tf-ov.hide{display:none}
+#tf-game h2{margin:0;font-size:30px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--tf-yellow)}
+#tf-game p{margin:0;font-size:14px;opacity:.9}
+#tf-game .tf-list{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:13px;text-align:left;margin:4px 0}
+#tf-game .tf-list i{display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid #fff;margin-right:6px;vertical-align:-1px}
+#tf-game .tf-list b{color:var(--tf-yellow)}
+#tf-game button{background:var(--tf-yellow);color:var(--tf-dark);border:0;border-radius:40px;padding:12px 34px;font-size:18px;
+  font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;box-shadow:0 5px 0 #b3a600;transition:transform .1s}
+#tf-game button:hover{transform:translateY(-2px)} #tf-game button:active{transform:translateY(3px);box-shadow:0 2px 0 #b3a600}
+</style>
+<canvas id="tf-c" width="400" height="600"></canvas>
+<div class="tf-ov" id="tf-start">
+  <h2>Cap Catch</h2>
+  <p>Catch the falling caps in your TwentyFour crate!<br>Different styles = different points.</p>
+  <div class="tf-list">
+    <span><i style="background:#fff;border-color:#E63946"></i>Trucker <b>10</b></span><span><i style="background:#2E86DE"></i>Baseball <b>15</b></span>
+    <span><i style="background:#2ECC71"></i>Bucket <b>20</b></span><span><i style="background:#8E44AD"></i>Beanie <b>25</b></span>
+    <span><i style="background:#FFED00"></i>UFLEX <b>30</b></span><span><i style="background:#C9A227"></i>Executive <b>50</b></span>
+  </div>
+  <p>Chain catches for combos up to x5. Miss 3 and it's game over.<br>Move with mouse, touch or ← → keys.</p>
+  <button id="tf-play">Play</button>
+</div>
+<div class="tf-ov hide" id="tf-over">
+  <h2>Game Over</h2>
+  <p id="tf-final" style="font-size:22px;font-weight:700"></p>
+  <p id="tf-best"></p>
+  <button id="tf-again">Play again</button>
+</div>
+<script>
+(function(){
+const C=document.getElementById('tf-c'),X=C.getContext('2d'),W=400,H=600,GROUND=540;
+const OR='#FFED00',DK='#1A1A1A',CR='#FFF9DB',YL='#FFED00';
+const TYPES=[
+ {n:'trucker',pts:10,w:30,col:['#fff','#E63946']},
+ {n:'baseball',pts:15,w:28,col:['#2E86DE','#16335c']},
+ {n:'bucket',pts:20,w:22,col:['#2ECC71','#17824a']},
+ {n:'beanie',pts:25,w:16,col:['#8E44AD',OR]},
+ {n:'uflex',pts:30,w:10,col:[OR,'#E63946']},
+ {n:'executive',pts:50,w:4,col:['#C9A227',DK]}
+];
+const total=TYPES.reduce((a,t)=>a+t.w,0);
+let S,keys={},tx=W/2,best=0,raf,last=0;
+try{best=+localStorage.getItem('tf-best')||0}catch(e){}
+
+function reset(){S={score:0,lives:3,combo:0,caps:[],fx:[],t:0,spawn:0,px:W/2,squish:0,run:true,clouds:[{x:60,y:90,s:1},{x:300,y:170,s:.7},{x:180,y:300,s:.85}]}}
+function pick(){let r=Math.random()*total;for(const t of TYPES){if((r-=t.w)<0)return t}return TYPES[0]}
+function spawn(){const t=pick();S.caps.push({t,x:30+Math.random()*(W-60),y:-40,vy:110+Math.min(S.score/12,170)+Math.random()*40,r:0,vr:(Math.random()-.5)*2,ph:Math.random()*6})}
+function pop(x,y,txt,c){S.fx.push({x,y,txt,c,life:1})}
+function burst(x,y,c){for(let i=0;i<10;i++){const a=Math.random()*6.28,s=60+Math.random()*90;S.fx.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-60,c,life:1,dot:1})}}
+
+function eyes(y,sad){X.fillStyle=DK;for(const dx of[-6,6]){X.beginPath();X.arc(dx,y,2.6,0,6.28);X.fill()}
+ X.fillStyle='#fff';for(const dx of[-5.3,6.7]){X.beginPath();X.arc(dx,y-1,.9,0,6.28);X.fill()}
+ X.strokeStyle=DK;X.lineWidth=1.5;X.beginPath();sad?X.arc(0,y+7,3,3.4,6):X.arc(0,y+3,3.5,.2,2.94);X.stroke();
+ X.fillStyle='rgba(255,90,90,.35)';for(const dx of[-11,11]){X.beginPath();X.ellipse(dx,y+3,3,2,0,0,6.28);X.fill()}}
+function ell(x,y,rx,ry,f){X.beginPath();X.ellipse(x,y,rx,ry,0,0,6.28);X.fillStyle=f;X.fill();X.stroke()}
+function drawCap(t){
+ const [a,b]=t.col;X.lineWidth=2.5;X.strokeStyle=DK;X.lineJoin='round';
+ switch(t.n){
+ case'bucket':
+  ell(0,8,30,8,b);X.beginPath();X.moveTo(-18,8);X.lineTo(-14,-14);X.quadraticCurveTo(0,-20,14,-14);X.lineTo(18,8);X.closePath();X.fillStyle=a;X.fill();X.stroke();
+  X.fillStyle=b;X.fillRect(-16,-1,32,4);eyes(-5);break;
+ case'beanie':
+  X.beginPath();X.arc(0,2,20,Math.PI,0);X.lineTo(20,8);X.lineTo(-20,8);X.closePath();X.fillStyle=a;X.fill();X.stroke();
+  X.fillStyle=b;X.beginPath();X.roundRect(-22,4,44,10,4);X.fill();X.stroke();
+  ell(0,-20,6,6,b);eyes(-6);break;
+ default:{
+  const dome=(f)=>{X.beginPath();X.arc(0,6,22,Math.PI,0);X.lineTo(22,8);X.lineTo(-22,8);X.closePath();X.fillStyle=f;X.fill();X.stroke()};
+  dome(a);
+  if(t.n==='uflex'){X.save();X.beginPath();X.arc(0,6,22,Math.PI,0);X.lineTo(-22,8);X.clip();X.fillStyle=b;X.fillRect(0,-20,22,30);X.restore();X.beginPath();X.arc(0,6,22,Math.PI,0);X.lineTo(22,8);X.lineTo(-22,8);X.closePath();X.stroke()}
+  if(t.n==='trucker'){X.fillStyle=b;X.beginPath();X.arc(0,6,22,Math.PI*1.15,Math.PI*1.85);X.lineTo(0,6);X.fill();X.stroke()}
+  if(t.n==='executive'){X.strokeStyle='#fff';X.lineWidth=2;X.beginPath();X.moveTo(-21,3);X.lineTo(21,3);X.stroke();X.strokeStyle=DK;X.lineWidth=2.5}
+  X.beginPath();X.ellipse(14,10,18,5,.12,0,6.28);X.fillStyle=b;X.fill();X.stroke(); // peak
+  ell(0,-16,2.8,2.8,b);eyes(-4)}}
+}
+function cloud(c){X.save();X.translate(c.x,c.y);X.scale(c.s,c.s);X.fillStyle='rgba(255,237,0,.45)';
+ for(const[x,y,r]of[[0,0,20],[22,-8,26],[48,2,18]]){X.beginPath();X.arc(x,y,r,0,6.28);X.fill()}X.restore()}
+function crate(){const bob=Math.sin(S.t*6)*1.5,sq=S.squish;
+ X.save();X.translate(S.px,GROUND-24+bob);X.scale(1+sq*.15,1-sq*.18);
+ X.lineWidth=3;X.strokeStyle=DK;
+ X.fillStyle=OR;X.beginPath();X.roundRect(-44,-22,88,46,8);X.fill();X.stroke();
+ X.fillStyle=DK;X.fillRect(-44,-22,88,8);
+ X.fillStyle=DK;X.font='800 20px Modelica,Helvetica,Arial,sans-serif';X.textAlign='center';X.fillText('24',0,16);
+ X.save();X.translate(0,-2);X.scale(.85,.85);eyes(-3);X.restore();
+ X.restore()}
+
+function update(dt){
+ S.t+=dt;
+ const sp=360;if(keys.ArrowLeft||keys.a)tx-=sp*dt;if(keys.ArrowRight||keys.d)tx+=sp*dt;
+ tx=Math.max(44,Math.min(W-44,tx));S.px+=(tx-S.px)*Math.min(1,dt*14);S.squish=Math.max(0,S.squish-dt*5);
+ S.spawn-=dt;if(S.spawn<=0){spawn();S.spawn=Math.max(.45,1.1-S.score/900)}
+ for(const c of S.caps){c.y+=c.vy*dt;c.r+=c.vr*dt;c.x+=Math.sin(S.t*3+c.ph)*18*dt;c.hit=0}
+ S.caps=S.caps.filter(c=>{
+  if(c.y>GROUND-44&&c.y<GROUND-8&&Math.abs(c.x-S.px)<48){
+   S.combo++;const m=Math.min(5,1+Math.floor(S.combo/4)),p=c.t.pts*m;S.score+=p;S.squish=1;
+   pop(c.x,c.y-20,'+'+p+(m>1?' x'+m:''),c.t.n==='executive'?'#C9A227':DK);burst(c.x,c.y,c.t.col[0]===('#fff')?YL:c.t.col[0]);return false}
+  if(c.y>GROUND+10){S.lives--;S.combo=0;pop(c.x,GROUND-10,'Oops!',DK);S.shake=.25;return false}
+  return true});
+ S.fx=S.fx.filter(f=>{f.life-=dt*(f.dot?1.6:1.1);if(f.dot){f.x+=f.vx*dt;f.y+=f.vy*dt;f.vy+=300*dt}else f.y-=40*dt;return f.life>0});
+ S.shake=Math.max(0,(S.shake||0)-dt);
+ for(const c of S.clouds){c.x+=8*dt;if(c.x>W+60)c.x=-80}
+ if(S.lives<=0)end();
+}
+function draw(){
+ X.save();if(S.shake)X.translate((Math.random()-.5)*6,(Math.random()-.5)*6);
+ X.clearRect(-10,-10,W+20,H+20);X.fillStyle=CR;X.fillRect(-10,-10,W+20,H+20);
+ S.clouds.forEach(cloud);
+ X.fillStyle=DK;X.fillRect(-10,GROUND,W+20,H-GROUND+10);X.fillStyle=OR;X.fillRect(-10,GROUND,W+20,6);
+ for(const c of S.caps){X.save();X.translate(c.x,c.y);X.rotate(Math.sin(S.t*4+c.ph)*.25+c.r*.2);
+  if(c.t.n==='executive'){X.shadowColor=YL;X.shadowBlur=14}drawCap(c.t);X.restore()}
+ crate();
+ for(const f of S.fx){X.globalAlpha=Math.max(0,f.life);
+  if(f.dot){X.fillStyle=f.c;X.beginPath();X.arc(f.x,f.y,4,0,6.28);X.fill()}
+  else{X.fillStyle=f.c;X.font='800 20px Modelica,Helvetica,Arial,sans-serif';X.textAlign='center';X.lineWidth=4;X.strokeStyle=CR;X.strokeText(f.txt,f.x,f.y);X.fillText(f.txt,f.x,f.y)}
+  X.globalAlpha=1}
+ // HUD
+ X.fillStyle=DK;X.font='800 26px Modelica,Helvetica,Arial,sans-serif';X.textAlign='left';X.fillText(S.score,16,38);
+ X.font='700 12px Modelica,Helvetica,Arial,sans-serif';X.fillStyle=DK;
+ if(S.combo>=4)X.fillText('COMBO x'+Math.min(5,1+Math.floor(S.combo/4)),16,56);
+ X.textAlign='right';X.font='24px sans-serif';X.fillStyle=DK;X.fillText('♥'.repeat(S.lives),W-14,36);X.fillStyle='rgba(26,26,26,.2)';
+ X.restore()}
+
+function loop(ts){const dt=Math.min(.04,(ts-last)/1000||0);last=ts;if(S.run){update(dt);draw();raf=requestAnimationFrame(loop)}}
+function start(){reset();tx=W/2;document.getElementById('tf-start').classList.add('hide');document.getElementById('tf-over').classList.add('hide');S.run=true;last=performance.now();cancelAnimationFrame(raf);raf=requestAnimationFrame(loop)}
+function end(){S.run=false;draw();if(S.score>best){best=S.score;try{localStorage.setItem('tf-best',best)}catch(e){}}
+ document.getElementById('tf-final').textContent='You scored '+S.score;document.getElementById('tf-best').textContent='Best: '+best;document.getElementById('tf-over').classList.remove('hide')}
+function pos(e){const r=C.getBoundingClientRect();tx=(e.clientX-r.left)/r.width*W}
+C.addEventListener('pointermove',pos);C.addEventListener('pointerdown',pos);
+window.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)&&S&&S.run)e.preventDefault();keys[e.key]=1});
+window.addEventListener('keyup',e=>keys[e.key]=0);
+document.getElementById('tf-play').onclick=start;document.getElementById('tf-again').onclick=start;
+reset();draw();
+})();
+</script>
+</div>

@@ -1,0 +1,144 @@
+<!-- TwentyFour "Cap Dash" - endless speed runner (Chrome-dino / Geometry-Dash style).
+     Paste into a WordPress/Avada Code Block or an HTML page. Brand colours/font are CSS variables below. -->
+<div id="tf-run">
+<style>
+#tf-run{
+  --tf-yellow:#FFED00; /* 100% CMYK yellow */ --tf-dark:#1A1A1A; --tf-cream:#FFF9DB; --tf-white:#fff;
+  font-family:'Modelica','Modelica Regular',Helvetica,Arial,sans-serif;
+  max-width:760px;margin:0 auto;position:relative;color:var(--tf-dark);user-select:none;-webkit-user-select:none;
+}
+#tf-run *{box-sizing:border-box;font-family:inherit}
+#tf-run canvas{width:100%;display:block;border-radius:18px;border:4px solid var(--tf-dark);background:var(--tf-cream);touch-action:manipulation;cursor:pointer}
+#tf-run .tf-ov{position:absolute;inset:4px;border-radius:14px;background:rgba(26,26,26,.88);color:var(--tf-white);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:14px;gap:10px}
+#tf-run .tf-ov.hide{display:none}
+#tf-run h2{margin:0;font-size:34px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--tf-yellow)}
+#tf-run p{margin:0;font-size:14px;opacity:.92}
+#tf-run button{background:var(--tf-yellow);color:var(--tf-dark);border:0;border-radius:40px;padding:12px 38px;font-size:18px;
+  font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;box-shadow:0 5px 0 #b3a600;transition:transform .1s}
+#tf-run button:hover{transform:translateY(-2px)} #tf-run button:active{transform:translateY(3px);box-shadow:0 2px 0 #b3a600}
+</style>
+<canvas id="tf-rc" width="800" height="300"></canvas>
+<div class="tf-ov" id="tf-rstart">
+  <h2>Cap Dash</h2>
+  <p>Your cap is late for the TwentyFour factory dispatch!<br>Jump the needles and crates, grab the 24 coins.</p>
+  <p><b style="color:#FFED00">SPACE</b> / <b style="color:#FFED00">&uarr;</b> / <b style="color:#FFED00">TAP</b> to jump &middot; hold for a higher jump<br>Land on crates to stay safe. It only gets faster!</p>
+  <button id="tf-rplay">Go</button>
+</div>
+<div class="tf-ov hide" id="tf-rover">
+  <h2>Crashed!</h2>
+  <p id="tf-rfinal" style="font-size:22px;font-weight:700"></p>
+  <p id="tf-rbest"></p>
+  <button id="tf-ragain">Retry</button>
+</div>
+<script>
+(function(){
+const C=document.getElementById('tf-rc'),X=C.getContext('2d'),W=800,H=300,GY=240,PX=110,PS=32;
+const YL='#FFED00',DK='#1A1A1A',CR='#FFF9DB',F='800 20px Modelica,Helvetica,Arial,sans-serif';
+const G=2600,JV=830;
+let S,best=0,raf,last=0,holding=false;
+try{best=+localStorage.getItem('tf-run-best')||0}catch(e){}
+
+function reset(){S={t:0,dist:0,coins:0,speed:380,obs:[],coins_:[],fx:[],trail:0,nextSpawn:500,
+  p:{y:GY,vy:0,rot:0,on:true,sq:0},dead:false,over:0,run:true,milestone:0,flash:0,shake:0,started:false}}
+const score=()=>Math.floor(S.dist/10)+S.coins*10;
+
+function jump(){if(!S||!S.run||S.dead)return;if(S.p.on){S.p.vy=-JV;S.p.on=false;S.p.sq=-1;S.started=true}}
+function spawn(){
+  const r=Math.random(),x=W+40;let o;
+  if(r<.45){const n=1+Math.floor(Math.random()*3);o={k:'spike',x,w:n*30,h:34,n}}
+  else if(r<.8){o={k:'box',x,w:46,h:Math.random()<.5?46:76}}
+  else{o={k:'box',x,w:46,h:46};S.obs.push(o);o={k:'spike',x:x+76,w:30,h:34,n:1}}
+  S.obs.push(o);
+  const gap=S.speed*(.75+Math.random()*.5)+(o.w||40)+(o.k==='box'?40:0);
+  if(Math.random()<.45)S.coins_.push({x:x+gap/2,y:GY-90-Math.random()*30,ph:Math.random()*6});
+  S.nextSpawn=gap;
+}
+function burst(x,y,n,c){for(let i=0;i<n;i++){const a=Math.random()*6.28,s=80+Math.random()*260;S.fx.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-80,life:1,c})}}
+
+function die(){S.dead=true;S.shake=.4;burst(PX+16,S.p.y-16,26,YL);burst(PX+16,S.p.y-16,10,DK)}
+function update(dt){
+  S.t+=dt;const p=S.p;
+  if(!S.dead){
+    S.speed=Math.min(950,380+S.t*9);S.dist+=S.speed*dt;
+    // variable jump height: release early = shorter hop
+    if(!holding&&p.vy<-300)p.vy+=G*1.6*dt;
+    const prevB=p.y;p.vy+=G*dt;p.y+=p.vy*dt;p.on=false;
+    if(p.y>=GY){p.y=GY;p.vy=0;p.on=true}
+    for(const o of S.obs){o.x-=S.speed*dt;
+      if(o.k==='box'){const top=GY-o.h;
+        if(PX+PS-4>o.x&&PX+4<o.x+o.w){
+          if(p.vy>=0&&prevB<=top+8&&p.y>=top){p.y=top;p.vy=0;p.on=true}
+          else if(p.y>top+6)die()}}
+      else if(PX+PS-8>o.x+6&&PX+8<o.x+o.w-6&&p.y>GY-o.h+12)die()}
+    for(const c of S.coins_){c.x-=S.speed*dt;
+      if(!c.got&&Math.hypot(PX+16-c.x,p.y-16-c.y)<30){c.got=1;S.coins++;burst(c.x,c.y,8,YL)}}
+    S.obs=S.obs.filter(o=>o.x+o.w>-20);S.coins_=S.coins_.filter(c=>c.x>-20&&!c.got);
+    S.nextSpawn-=S.speed*dt;if(S.nextSpawn<=0)spawn();
+    // GD-style spin in the air, snap flat on landing
+    if(p.on){p.rot+= (Math.round(p.rot/6.2832)*6.2832-p.rot)*Math.min(1,dt*30);if(p.sq<0)p.sq=1}else p.rot+=dt*8.5;
+    p.sq*=Math.pow(.0005,dt);
+    S.trail-=dt;if(p.on&&S.trail<=0){S.trail=.035;S.fx.push({x:PX,y:p.y-2,vx:-S.speed*.4,vy:-30-Math.random()*50,life:.6,c:'rgba(26,26,26,.35)',s:1})}
+    const m=Math.floor(score()/400);if(m>S.milestone){S.milestone=m;S.flash=1.2}
+  }else{S.over+=dt;if(S.over>.7&&S.run){S.run=false;showOver()}}
+  S.flash=Math.max(0,S.flash-dt);S.shake=Math.max(0,S.shake-dt);
+  S.fx=S.fx.filter(f=>{f.life-=dt*1.4;f.x+=f.vx*dt;f.y+=f.vy*dt;if(!f.s)f.vy+=900*dt;return f.life>0});
+}
+
+function eyes(y){X.fillStyle=DK;for(const dx of[-6,6]){X.beginPath();X.arc(dx,y,2.8,0,6.28);X.fill()}
+  X.fillStyle='#fff';for(const dx of[-5.2,6.8]){X.beginPath();X.arc(dx,y-1,1,0,6.28);X.fill()}
+  X.strokeStyle=DK;X.lineWidth=1.8;X.beginPath();X.arc(0,y+3,3.6,.2,2.94);X.stroke()}
+function player(){const p=S.p;if(S.dead)return;
+  X.save();X.translate(PX+16,p.y-16);X.rotate(p.rot);X.scale(1+p.sq*.18,1-p.sq*.18);
+  X.lineWidth=3;X.strokeStyle=DK;X.lineJoin='round';
+  X.fillStyle=YL;X.beginPath();X.roundRect(-16,-14,32,30,[14,14,5,5]);X.fill();X.stroke();   // crown
+  X.fillStyle=DK;X.beginPath();X.ellipse(14,10,16,5,0,0,6.28);X.fill();                         // peak
+  X.fillStyle=YL;X.beginPath();X.arc(0,-15,2.6,0,6.28);X.fill();X.stroke();                     // button
+  eyes(-2);X.restore()}
+function spikes(o){for(let i=0;i<o.n;i++){const x=o.x+i*30;
+  X.fillStyle=DK;X.beginPath();X.moveTo(x,GY);X.lineTo(x+15,GY-o.h);X.lineTo(x+30,GY);X.closePath();X.fill();
+  X.fillStyle=YL;X.beginPath();X.ellipse(x+15,GY-o.h+14,2.5,5,0,0,6.28);X.fill()}}   // needle eye
+function box(o){const y=GY-o.h;X.lineWidth=3;X.strokeStyle=DK;X.fillStyle=YL;X.beginPath();X.roundRect(o.x,y,o.w,o.h,5);X.fill();X.stroke();
+  X.beginPath();X.moveTo(o.x,y+9);X.lineTo(o.x+o.w,y+9);X.stroke();
+  X.fillStyle=DK;X.font=F;X.textAlign='center';X.fillText('24',o.x+o.w/2,y+o.h/2+10)}
+function coin(c){const s=Math.abs(Math.sin(S.t*4+c.ph));X.save();X.translate(c.x,c.y+Math.sin(S.t*3+c.ph)*4);X.scale(.35+s*.65,1);
+  X.fillStyle=YL;X.strokeStyle=DK;X.lineWidth=3;X.beginPath();X.arc(0,0,13,0,6.28);X.fill();X.stroke();X.restore();
+  if(s>.5){X.fillStyle=DK;X.font='800 11px Modelica,Helvetica,Arial,sans-serif';X.textAlign='center';X.fillText('24',c.x,c.y+4+Math.sin(S.t*3+c.ph)*4)}}
+
+function draw(){
+  X.save();if(S.shake)X.translate((Math.random()-.5)*10,(Math.random()-.5)*10);
+  X.fillStyle=CR;X.fillRect(-10,-10,W+20,H+20);
+  // parallax factory skyline
+  const off=(S.dist*.25)%240;X.fillStyle='rgba(26,26,26,.07)';
+  for(let x=-off-240;x<W+240;x+=240){X.beginPath();X.moveTo(x,GY);X.lineTo(x,150);
+    for(let i=0;i<3;i++){X.lineTo(x+i*60+60,110);X.lineTo(x+i*60+60,150)}X.lineTo(x+180,GY);X.fill();X.fillRect(x+190,90,22,150)}
+  // speed lines
+  if(S.speed>560){X.strokeStyle='rgba(26,26,26,.13)';X.lineWidth=2;for(let i=0;i<7;i++){const y=30+i*31,x=((S.dist*1.6+i*173)%(W+160))-80;X.beginPath();X.moveTo(W-x,y);X.lineTo(W-x+60+S.speed/12,y);X.stroke()}}
+  // ground
+  X.fillStyle=DK;X.fillRect(-10,GY,W+20,H-GY+10);X.fillStyle=YL;X.fillRect(-10,GY,W+20,5);
+  const go=S.dist%60;X.fillStyle='rgba(255,237,0,.4)';for(let x=-go;x<W;x+=60)X.fillRect(x,GY+22,28,4);
+  S.coins_.forEach(coin);S.obs.forEach(o=>o.k==='box'?box(o):spikes(o));player();
+  for(const f of S.fx){X.globalAlpha=Math.max(0,f.life);X.fillStyle=f.c;X.fillRect(f.x,f.y,f.s?5:6,f.s?5:6)}X.globalAlpha=1;
+  // HUD
+  X.fillStyle=DK;X.textAlign='right';X.font='800 26px Modelica,Helvetica,Arial,sans-serif';X.fillText(String(score()).padStart(5,'0'),W-18,38);
+  X.font='700 12px Modelica,Helvetica,Arial,sans-serif';X.fillText('BEST '+Math.max(best,score()),W-18,56);
+  X.textAlign='left';X.fillText('SPEED',18,28);X.fillStyle='rgba(26,26,26,.15)';X.fillRect(18,34,120,10);
+  X.fillStyle=DK;X.fillRect(18,34,120*(S.speed-380)/570,10);X.strokeStyle=DK;X.lineWidth=2;X.strokeRect(18,34,120,10);
+  if(S.flash>0){X.globalAlpha=Math.min(1,S.flash);X.textAlign='center';X.font='800 34px Modelica,Helvetica,Arial,sans-serif';
+    X.strokeStyle=YL;X.lineWidth=8;X.strokeText('SPEED UP!',W/2,100);X.fillStyle=DK;X.fillText('SPEED UP!',W/2,100);X.globalAlpha=1}
+  X.restore()}
+
+function loop(ts){const dt=Math.min(.035,(ts-last)/1000||0);last=ts;update(dt);draw();if(S.run)raf=requestAnimationFrame(loop)}
+function start(){reset();document.getElementById('tf-rstart').classList.add('hide');document.getElementById('tf-rover').classList.add('hide');last=performance.now();cancelAnimationFrame(raf);raf=requestAnimationFrame(loop)}
+function showOver(){const s=score();if(s>best){best=s;try{localStorage.setItem('tf-run-best',best)}catch(e){}}
+  document.getElementById('tf-rfinal').textContent='Score: '+s;document.getElementById('tf-rbest').textContent='Best: '+best;document.getElementById('tf-rover').classList.remove('hide')}
+
+C.addEventListener('pointerdown',e=>{holding=true;jump()});
+window.addEventListener('pointerup',()=>holding=false);
+window.addEventListener('keydown',e=>{if(['Space','ArrowUp','KeyW'].includes(e.code)){if(S&&S.run&&!S.dead){e.preventDefault();holding=true;jump()}}});
+window.addEventListener('keyup',e=>{if(['Space','ArrowUp','KeyW'].includes(e.code))holding=false});
+document.getElementById('tf-rplay').onclick=start;document.getElementById('tf-ragain').onclick=start;
+reset();draw();
+})();
+</script>
+</div>
